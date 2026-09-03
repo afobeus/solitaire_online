@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import type {
   Command,
   Item,
@@ -8,7 +8,9 @@ import type {
 import { itemInfo } from "../shared/protocol.js";
 import { api, timeLeft, useClock, useGame, type User } from "./network.js";
 import { Board, PlayingCard } from "./Board.js";
-import { ArenaMap } from "./Map.js";
+const ArenaMap = lazy(() =>
+  import("./Map.js").then((module) => ({ default: module.ArenaMap })),
+);
 function Brand() {
   return (
     <div className="brand">
@@ -493,7 +495,9 @@ export function App() {
   }
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <header
+        className={`app-header ${match && !match.duel && !profile ? "in-match-header" : ""}`}
+      >
         <Brand />
         <nav>
           <button
@@ -542,7 +546,15 @@ export function App() {
           )}
         </div>
       )}
-      <main className={match?.duel && !profile ? "wide-main" : "main"}>
+      <main
+        className={
+          match && !match.duel && !profile
+            ? "combat-main"
+            : match?.duel && !profile
+              ? "wide-main"
+              : "main"
+        }
+      >
         {profile ? (
           <>
             <div className="page-heading">
@@ -619,95 +631,56 @@ export function App() {
             errorId={game.notice?.error ? game.notice.id : 0}
           />
         ) : match ? (
-          <>
-            <div className="page-heading">
-              <div>
-                <span className="eyebrow">
-                  {match.self.status === "eliminated"
-                    ? "Вы выбыли · Наблюдение"
-                    : match.map.final
-                      ? "Последний круг"
-                      : "Матч идёт"}
-                </span>
-                <h1>
-                  {match.map.final ? "Финал арены" : "Оставайтесь в игре"}
-                </h1>
+          <div className="combat-stage">
+            <Suspense
+              fallback={
+                <div className="arena-loading">
+                  <span>♠</span>
+                  <strong>РАЗВОРАЧИВАЕМ 3D-АРЕНУ</strong>
+                  <small>СИНХРОНИЗАЦИЯ СЕКТОРА…</small>
+                </div>
+              }
+            >
+              <ArenaMap match={match} now={now} send={send} />
+            </Suspense>
+            <button className="hud-exit" onClick={() => setConfirmLeave(true)}>
+              ПОКИНУТЬ ОПЕРАЦИЮ <span>↗</span>
+            </button>
+            <aside className="hud-loadout">
+              <Inventory
+                match={match}
+                send={send}
+                now={now}
+                disabled={!online || match.self.status === "eliminated"}
+              />
+            </aside>
+            <aside className="hud-squad">
+              <div className="hud-panel-heading">
+                <span>УЧАСТНИКИ ОПЕРАЦИИ</span>
+                <b>{match.alive} / {match.roster.length}</b>
               </div>
-              <button
-                className="text-button"
-                onClick={() => setConfirmLeave(true)}
-              >
-                Выйти в лобби ↗
-              </button>
-            </div>
-            <div className="match-layout">
-              <ArenaMap match={match} now={now} send={send} enabled={online} />
-              <aside className="match-sidebar">
-                <div className="zone-card">
-                  <span className="eyebrow">
-                    {match.map.final ? "Финальная стадия" : "Следующее сужение"}
-                  </span>
-                  <strong>
-                    {match.map.nextAt
-                      ? timeLeft(match.map.nextAt, now)
-                      : "ФИНАЛ"}
-                  </strong>
-                  <div className="zone-line" />
-                  <p>
-                    {match.map.final
-                      ? "Оставшиеся игроки встречаются в дуэлях."
-                      : `Держитесь ближе к центру. За границей зоны начинается отсчёт выбывания.`}
-                  </p>
+              {match.roster.map((p) => (
+                <div
+                  className={`hud-player ${p.status === "eliminated" ? "eliminated" : ""}`}
+                  key={p.id}
+                >
+                  <span className={`roster-dot ${p.status}`} />
+                  <strong>{p.name}{p.id === user.id ? " · ВЫ" : ""}</strong>
+                  <small>
+                    {p.status === "eliminated"
+                      ? "ВЫБЫЛ"
+                      : !p.connected
+                        ? "НЕТ СВЯЗИ"
+                        : p.status === "duel"
+                          ? "В БОЮ"
+                          : "АКТИВЕН"}
+                  </small>
                 </div>
-                <Inventory
-                  match={match}
-                  send={send}
-                  now={now}
-                  disabled={!online || match.self.status === "eliminated"}
-                />
-                <div className="survivors">
-                  <div className="panel-heading">
-                    <span className="eyebrow">Участники</span>
-                    <span className="alive-count">{match.alive} в игре</span>
-                  </div>
-                  {match.roster.map((p) => (
-                    <div
-                      className={`roster-row ${p.status === "eliminated" ? "eliminated" : ""}`}
-                      key={p.id}
-                    >
-                      <span className={`roster-dot ${p.status}`} />
-                      <span>
-                        {p.name}
-                        {p.id === user.id ? " · Вы" : ""}
-                      </span>
-                      <small>
-                        {p.status === "eliminated"
-                          ? "Выбыл"
-                          : !p.connected
-                            ? "Нет связи"
-                            : p.status === "duel"
-                              ? "Дуэль"
-                              : "На карте"}
-                      </small>
-                    </div>
-                  ))}
-                </div>
-                <div className="map-legend">
-                  <span>
-                    <i className="legend-you" />
-                    Вы
-                  </span>
-                  <span>
-                    <i className="legend-enemy" />
-                    Соперник
-                  </span>
-                  <span>
-                    <i className="legend-next" />
-                    Следующая зона
-                  </span>
-                </div>
-              </aside>
-            </div>
+              ))}
+            </aside>
+            {match.self.status === "eliminated" && (
+              <div className="hud-spectator">РЕЖИМ НАБЛЮДАТЕЛЯ · {match.alive} БОЙЦОВ ОСТАЛОСЬ</div>
+            )}
             {match.self.status === "eliminated" && !spectating && (
               <div className="modal-shade">
                 <section
@@ -736,7 +709,7 @@ export function App() {
                 </section>
               </div>
             )}
-          </>
+          </div>
         ) : room ? (
           <>
             <div className="page-heading">
@@ -991,7 +964,7 @@ export function App() {
           </>
         )}
       </main>
-      <footer className="app-footer">
+      <footer className={`app-footer ${match && !match.duel && !profile ? "match-footer" : ""}`}>
         <span>Solitaire Battle Royale</span>
         <span>У каждого игрока есть следующий ход.</span>
         <button onClick={() => setRules(true)}>Правила игры ↗</button>

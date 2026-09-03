@@ -31,7 +31,9 @@ services:
     restart: unless-stopped
     depends_on:
       app: { condition: service_healthy }
-    environment: { DOMAIN: "${DOMAIN:?Set DOMAIN in .env}" }
+    environment:
+      DOMAIN: "${DOMAIN:?Set DOMAIN in .env}"
+      ACME_EMAIL: "${ACME_EMAIL:?Set ACME_EMAIL in .env}"
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

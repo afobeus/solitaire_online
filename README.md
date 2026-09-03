@@ -1,6 +1,6 @@
 # Solitaire Battle Royale
 
-Полноценная многопользовательская браузерная игра для 2–8 человек. Сервер Fastify хранит активные комнаты, карты и дуэли в памяти, проверяет каждое игровое действие и синхронизирует персональные представления по WebSocket. React-клиент получает только видимые позиции, открытые карты и количества скрытых карт. Аккаунты, HttpOnly-сессии и завершённые результаты хранятся в SQLite.
+Полноценная многопользовательская браузерная игра для 2–8 человек. Сервер Fastify хранит активные комнаты, карты и дуэли в памяти, проверяет каждое игровое действие и синхронизирует персональные представления по WebSocket. React-клиент показывает матч как аппаратно ускоренную Three.js-сцену с тактической камерой и HUD, но получает только видимые позиции, открытые карты и количества скрытых карт. Аккаунты, HttpOnly-сессии и завершённые результаты хранятся в SQLite.
 
 ## Локальный запуск
 
@@ -33,51 +33,34 @@ pnpm db:backup       # согласованная резервная копия 
 
 ## Production: Docker Compose и HTTPS
 
-На сервере нужны Linux, Docker Engine с Compose v2, домен с A/AAAA-записью на сервер и открытые входящие TCP-порты 80/443, а также UDP 443 для HTTP/3. Порт приложения 3000 наружу не публикуется. Caddy сам получает и обновляет сертификат Let's Encrypt.
+Нужны VPS с Ubuntu или Debian, домен с A-записью на публичный IPv4 сервера и доступ root или sudo. Во внешнем firewall провайдера откройте TCP 80/443 и UDP 443. Порт приложения 3000 наружу не публикуется.
 
-Для Ubuntu 24.04/22.04 установите Docker из официального репозитория ([документация Docker](https://docs.docker.com/engine/install/ubuntu/)):
-
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-. /etc/os-release
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-sudo mkdir -p /opt/solitaire
-sudo chown "$USER":"$USER" /opt/solitaire
-```
-
-Команды Docker далее выполняйте от пользователя с доступом к Docker (например, через `sudo`). Если включён UFW, разрешите свой SSH-порт, затем `sudo ufw allow 80/tcp`, `sudo ufw allow 443/tcp`, `sudo ufw allow 443/udp`. Не создавайте AAAA-запись, если IPv6 на VPS не настроен.
-
-Основной вариант рассчитан на заранее собранный образ, поэтому маломощный VPS не компилирует TypeScript и React.
-
-На машине сборки (той же архитектуры CPU, что сервер):
+Загрузите репозиторий на сервер и запустите один интерактивный установщик:
 
 ```bash
-docker build -t solitaire-br:1.0.0 .
-docker save solitaire-br:1.0.0 | gzip > solitaire-br-1.0.0.tar.gz
-scp solitaire-br-1.0.0.tar.gz user@server:/opt/solitaire/
-scp -r compose.yaml Caddyfile scripts migrations .env.production.example user@server:/opt/solitaire/
+cd /путь/к/solitaire_online
+sudo bash install.sh
 ```
 
-На сервере:
+Либо загрузите только установщик; он сам клонирует проект:
 
 ```bash
-cd /opt/solitaire
-cp .env.production.example .env
-# измените DOMAIN и оставьте IMAGE_NAME=solitaire-br:1.0.0
-gunzip -c solitaire-br-1.0.0.tar.gz | docker load
-chmod +x scripts/*.sh
-./scripts/deploy.sh
-curl https://game.example.com/api/health
+curl -fsSLO https://raw.githubusercontent.com/afobeus/solitaire_online/main/install.sh
+sudo bash install.sh
 ```
 
-Ответ `{"ok":true}` означает, что приложение и SQLite доступны. Данные находятся в Docker volume `solitaire_data`, сертификаты — в `caddy_data`, а переносимые копии — в `/opt/solitaire/backups`.
+Скрипт запросит домен, email для сертификата и эксплуатационные лимиты. Затем он:
+
+- установит Git, Docker Engine, Buildx и Compose v2 из официального репозитория Docker;
+- при необходимости создаст swap 2 ГБ для сборки на VPS с 1 ГБ RAM;
+- создаст закрытый production `.env`;
+- соберёт TypeScript и React внутри Docker прямо на сервере;
+- подготовит постоянный том SQLite и применит миграции;
+- запустит приложение и Caddy, откроет порты в уже активном UFW/firewalld и проверит health endpoint.
+
+Если `install.sh` запущен отдельно от проекта, он дополнительно запросит Git URL, ветку и каталог, после чего сам клонирует исходники. Значение Git URL по умолчанию — этот репозиторий. Повторный запуск обновляет отдельный клонированный репозиторий, делает согласованный backup работающей SQLite, пересобирает образ и перезапускает приложение. Для проекта, загруженного вручную, повторный запуск собирает текущие файлы без автоматического `git pull`.
+
+Ответ `{"ok":true}` по адресу `https://ваш-домен/api/health` означает, что приложение и SQLite доступны. Caddy сам получает и обновляет TLS-сертификат. Если DNS ещё не обновился, контейнеры всё равно запускаются, а Caddy повторяет получение сертификата в фоне. Данные находятся в Docker volume `solitaire_data`, сертификаты — в `caddy_data`, а переносимые копии — в каталоге `backups` внутри проекта.
 
 Эксплуатация:
 
@@ -92,7 +75,7 @@ docker compose start                 # запуск
 
 Backup использует SQLite Online Backup API и проверяет `integrity_check`, поэтому не копирует работающий WAL-файл вслепую. Restore принимает обязательный файл только из `./backups`, останавливает запись, проверяет файл, сохраняет текущую базу рядом с основной как `*.before-restore-*`, заменяет базу и вновь запускает приложение.
 
-Для обновления загрузите новый образ (`docker load`) и измените `IMAGE_NAME` в `.env`, затем выполните `./scripts/update.sh`. Если образ хранится в registry, укажите его полное имя и выполните `./scripts/update.sh --pull`. Перед обновлением создаётся backup. Контейнер автоматически перезапускается после сбоя, healthcheck следит за SQLite, а Docker ограничивает каждый лог тремя файлами по 10 МБ. Дополнительные игровые настройки можно добавить в production `.env`; Compose передаёт их приложению.
+Для обновления исходников снова выполните `sudo ./install.sh`. Перед остановкой приложения создаётся backup, затем образ пересобирается на сервере. Контейнер автоматически перезапускается после сбоя, healthcheck следит за SQLite, а Docker ограничивает каждый лог тремя файлами по 10 МБ. Дополнительные игровые настройки можно добавить в production `.env`; установщик сохраняет прежний `.env` как `.env.before-install-*` перед заменой.
 
 Активные комнаты и матчи живут только в памяти одного процесса. При перезапуске или обновлении они прекращаются; их участникам нужно создать новый матч. Аккаунты, сессии и уже завершённая статистика сохраняются в volume. Масштабировать сервис на несколько процессов без общего координатора нельзя.
 
