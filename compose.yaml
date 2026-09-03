@@ -1,0 +1,49 @@
+services:
+  app:
+    image: ${IMAGE_NAME:-solitaire-br:local}
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${DOMAIN:?Set DOMAIN in .env}
+      DATABASE_PATH: /data/solitaire.sqlite
+      TRUST_PROXY: "true"
+      MAX_MATCHES: ${MAX_MATCHES:-12}
+      MAX_CONNECTIONS: ${MAX_CONNECTIONS:-120}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - solitaire_data:/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [internal]
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      app: { condition: service_healthy }
+    environment: { DOMAIN: "${DOMAIN:?Set DOMAIN in .env}" }
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    networks: [internal]
+networks:
+  internal: {}
+volumes:
+  solitaire_data: {}
+  caddy_data: {}
+  caddy_config: {}

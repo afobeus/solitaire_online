@@ -1,0 +1,151 @@
+export const suits = ["spades", "hearts", "clubs", "diamonds"] as const;
+export type Suit = (typeof suits)[number];
+export interface Card {
+  suit: Suit;
+  rank: number;
+}
+export interface Column {
+  down: Card[];
+  up: Card[];
+}
+export interface Board {
+  stock: Card[];
+  waste: Card[];
+  tableau: Column[];
+  foundations: Card[][];
+  revealed: number;
+}
+export interface BoardView {
+  stockCount: number;
+  waste: Card | null;
+  tableau: { hidden: number; cards: Card[] }[];
+  foundations: Card[][];
+  revealed: number;
+  score: number;
+}
+export type Source =
+  | { type: "waste" }
+  | { type: "tableau"; column: number; index: number };
+export type Destination = { type: "tableau" | "foundation"; column: number };
+export type CardAction =
+  | { type: "draw" }
+  | { type: "move"; from: Source; to: Destination };
+export const red = (c: Card) => c.suit === "hearts" || c.suit === "diamonds";
+export const score = (b: Board) =>
+  b.foundations.reduce((n, f) => n + f.length, 0);
+export function orderedDeck(): Card[] {
+  return suits.flatMap((suit) =>
+    Array.from({ length: 13 }, (_, i) => ({ suit, rank: i + 1 })),
+  );
+}
+export function deal(deck: Card[]): Board {
+  if (
+    deck.length !== 52 ||
+    new Set(deck.map((c) => `${c.suit}:${c.rank}`)).size !== 52 ||
+    deck.some((c) => !suits.includes(c.suit) || c.rank < 1 || c.rank > 13)
+  )
+    throw new Error("Нужна стандартная колода");
+  const cards = deck.map((c) => ({ ...c }));
+  const tableau = Array.from({ length: 7 }, (_, i) => {
+    const part = cards.splice(0, i + 1);
+    return { down: part.slice(0, -1), up: part.slice(-1) };
+  });
+  return {
+    stock: cards,
+    waste: [],
+    tableau,
+    foundations: [[], [], [], []],
+    revealed: 0,
+  };
+}
+// Only this explicit projection may cross the network. No hidden card identifiers or seeds.
+export function boardView(b: Board): BoardView {
+  return {
+    stockCount: b.stock.length,
+    waste: b.waste.at(-1) ?? null,
+    tableau: b.tableau.map((c) => ({
+      hidden: c.down.length,
+      cards: c.up.map((v) => ({ ...v })),
+    })),
+    foundations: b.foundations.map((f) => f.map((c) => ({ ...c }))),
+    revealed: b.revealed,
+    score: score(b),
+  };
+}
+export function selectedCards(b: BoardView, from: Source): Card[] {
+  if (from.type === "waste") return b.waste ? [b.waste] : [];
+  if (
+    !Number.isInteger(from.column) ||
+    !Number.isInteger(from.index) ||
+    from.index < 0
+  )
+    return [];
+  return b.tableau[from.column]?.cards.slice(from.index) ?? [];
+}
+export function canMove(b: BoardView, from: Source, to: Destination): boolean {
+  if (!Number.isInteger(to.column) || to.column < 0) return false;
+  const cards = selectedCards(b, from),
+    first = cards[0];
+  if (
+    !first ||
+    cards.some(
+      (c, i) =>
+        i > 0 &&
+        (cards[i - 1].rank !== c.rank + 1 || red(cards[i - 1]) === red(c)),
+    )
+  )
+    return false;
+  if (to.type === "foundation") {
+    const f = b.foundations[to.column];
+    return (
+      !!f &&
+      cards.length === 1 &&
+      first.suit === suits[to.column] &&
+      first.rank === f.length + 1
+    );
+  }
+  const target = b.tableau[to.column];
+  if (!target || (from.type === "tableau" && from.column === to.column))
+    return false;
+  const top = target.cards.at(-1);
+  return top
+    ? top.rank === first.rank + 1 && red(top) !== red(first)
+    : target.hidden === 0 && first.rank === 13;
+}
+export function applyAction(board: Board, action: CardAction): Board | null {
+  if (
+    action.type === "move" &&
+    !canMove(boardView(board), action.from, action.to)
+  )
+    return null;
+  if (
+    action.type === "draw" &&
+    board.stock.length === 0 &&
+    board.waste.length === 0
+  )
+    return null;
+  const b: Board = structuredClone(board);
+  if (action.type === "draw") {
+    if (b.stock.length) b.waste.push(b.stock.pop()!);
+    else {
+      b.stock = b.waste.reverse();
+      b.waste = [];
+    }
+    return b;
+  }
+  const cards =
+    action.from.type === "waste"
+      ? [b.waste.pop()!]
+      : b.tableau[action.from.column].up.splice(action.from.index);
+  if (action.to.type === "foundation")
+    b.foundations[action.to.column].push(...cards);
+  else b.tableau[action.to.column].up.push(...cards);
+  if (action.from.type === "tableau") {
+    const col = b.tableau[action.from.column];
+    if (!col.up.length && col.down.length) {
+      col.up.push(col.down.pop()!);
+      b.revealed++;
+    }
+  }
+  return b;
+}
