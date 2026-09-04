@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_NAME="Solitaire Battle Royale"
+APP_NAME="Febus Solitaire Collection"
 DEFAULT_REPOSITORY="https://github.com/afobeus/solitaire_online.git"
-DEFAULT_INSTALL_DIR="/opt/solitaire-battle-royale"
+DEFAULT_INSTALL_DIR="/opt/febus"
 PROJECT_DIR=""
 
 green='\033[1;32m'
@@ -202,7 +202,7 @@ umask 077
 cat >.env <<ENV
 DOMAIN=$domain
 ACME_EMAIL=$acme_email
-IMAGE_NAME=solitaire-br:server
+IMAGE_NAME=febus:server
 MAX_MATCHES=$max_matches
 MAX_CONNECTIONS=$max_connections
 MAX_ROOMS=40
@@ -214,19 +214,19 @@ MOVE_MS=180
 TICK_MS=250
 DISCONNECT_MS=20000
 COUNTDOWN_MS=3000
-DUEL_MS=180000
+DUEL_MS=360000
 OVERTIME_MS=30000
 PROTECTION_MS=5000
 OUTSIDE_MS=10000
 RECON_MS=8000
 PEEK_MS=5000
-MAP_SIZE=12
-VISION_RADIUS=3
-LOOT_COUNT=24
+MAP_SIZE=18
+VISION_RADIUS=4
+LOOT_COUNT=9
 INVENTORY_SIZE=3
 SESSION_DAYS=30
 RESULT_RETENTION_MS=60000
-ZONE_STAGES=[{"afterMs":60000,"inset":1},{"afterMs":120000,"inset":2},{"afterMs":180000,"inset":3},{"afterMs":240000,"inset":4},{"afterMs":300000,"inset":5,"final":true}]
+ZONE_STAGES=[{"afterMs":90000,"inset":2},{"afterMs":180000,"inset":4},{"afterMs":270000,"inset":5},{"afterMs":330000,"inset":7},{"afterMs":360000,"inset":8,"final":true}]
 LOG_LEVEL=info
 ENV
 chmod 600 .env

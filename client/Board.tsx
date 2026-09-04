@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  automaticDestination,
   canMove,
   red,
   suits,
@@ -62,6 +63,7 @@ export function Board({
   onAction?: (action: CardAction) => void;
 }) {
   const [selected, setSelected] = useState<Source | null>(null),
+    [dragging, setDragging] = useState<Source | null>(null),
     [rejected, setRejected] = useState(false);
   useEffect(() => setSelected(null), [revision]);
   useEffect(() => {
@@ -80,6 +82,17 @@ export function Board({
   function move(to: Destination, from = selected) {
     if (!interactive || !from) return;
     onAction?.({ type: "move", from, to });
+  }
+  function rejectBriefly() {
+    setRejected(true);
+    window.setTimeout(() => setRejected(false), 420);
+  }
+  function automaticMove(from: Source) {
+    if (!interactive) return;
+    const to = automaticDestination(board, from);
+    setSelected(null);
+    if (to) onAction?.({ type: "move", from, to });
+    else rejectBriefly();
   }
   function drop(event: React.DragEvent, to: Destination) {
     event.preventDefault();
@@ -107,11 +120,18 @@ export function Board({
           return;
         }
         setSelected(from);
+        setDragging(from);
         event.dataTransfer.setData(
           "application/x-solitaire",
           JSON.stringify({ origin: "own", from }),
         );
         event.dataTransfer.effectAllowed = "move";
+      },
+      onDragEnd: () => setDragging(null),
+      onDoubleClick: (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        automaticMove(from);
       },
     };
   }
@@ -143,7 +163,7 @@ export function Board({
           {...handlers({ type: "waste" })}
         >
           {board.waste ? (
-            <PlayingCard card={board.waste} />
+            <PlayingCard key={`${board.waste.suit}-${board.waste.rank}`} card={board.waste} />
           ) : (
             <span className="slot-label">Сброс</span>
           )}
@@ -162,7 +182,10 @@ export function Board({
             onDrop={(e) => drop(e, { type: "foundation", column })}
           >
             {board.foundations[column].length ? (
-              <PlayingCard card={board.foundations[column].at(-1)!} />
+              <PlayingCard
+                key={`${board.foundations[column].at(-1)!.suit}-${board.foundations[column].at(-1)!.rank}`}
+                card={board.foundations[column].at(-1)!}
+              />
             ) : (
               <span
                 className={
@@ -216,7 +239,7 @@ export function Board({
                 return (
                   <button
                     key={`${card.suit}-${card.rank}`}
-                    className={`tableau-card ${isSelected ? "selected" : ""}`}
+                    className={`tableau-card ${isSelected ? "selected" : ""} ${JSON.stringify(dragging) === JSON.stringify(from) ? "dragging" : ""}`}
                     style={{
                       top: `calc(${col.hidden + index} * var(--overlap))`,
                     }}

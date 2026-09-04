@@ -11,7 +11,7 @@ export function initialLoot(spawns: Position[]): Loot[] {
   const available = shuffled(
     cells().filter((c) => !spawns.some((p) => p.x === c.x && p.y === c.y)),
   );
-  const kinds: Item[] = ["shield", "recon", "peek"];
+  const kinds: Item[] = ["shuffle", "recon", "peek"];
   return available
     .slice(0, config.lootCount)
     .map((p, i) => ({ ...p, id: randomUUID(), item: kinds[i % 3] }));
@@ -26,8 +26,6 @@ export function pickup(
   const item = loot[index].item;
   if (inventory.length >= config.inventorySize)
     return "Инвентарь заполнен. Предмет остался на карте.";
-  if (item === "shield" && inventory.includes("shield"))
-    return "У вас уже есть щит. Второй остался на карте.";
   inventory.push(item);
   loot.splice(index, 1);
   return null;

@@ -16,7 +16,7 @@ function Brand() {
     <div className="brand">
       <span className="brand-icon">♠</span>
       <div>
-        SOLITAIRE<span>BATTLE ROYALE</span>
+        FEBUS<span>SOLITAIRE COLLECTION</span>
       </div>
     </div>
   );
@@ -34,15 +34,15 @@ function Rules() {
         Выберите карту кликом, затем цель — или перетащите последовательность.
       </p>
       <p>
-        За 180 секунд выигрывает собравший больше карт в основаниях. Затем
+        За 6 минут выигрывает собравший больше карт в основаниях. Затем
         сравниваются открытые карты. При ничьей — новый расклад на 30 секунд до
         первого основания. Если очков снова нет, победителя определяет
         жеребьёвка. Решаемость расклада не гарантируется.
       </p>
       <p>
-        Щит спасает от одного поражения. От зоны и долгого отключения он не
-        защищает. В финале оставшиеся игроки автоматически встречаются в дуэлях.
-        Последний участник побеждает.
+        «Перетасовка» меняет порядок оставшихся карт добора и сброса во время
+        дуэли. Двойной клик автоматически отправляет карту в однозначно
+        допустимую позицию. В финале оставшиеся игроки встречаются в дуэлях.
       </p>
     </div>
   );
@@ -214,19 +214,18 @@ function Inventory({
               title={itemInfo[item].description}
               disabled={
                 disabled ||
-                item === "shield" ||
                 (item === "recon" && !!match.duel) ||
-                (item === "peek" && !match.duel)
+                ((item === "peek" || item === "shuffle") && !match.duel)
               }
               onClick={() => send({ type: "item", item })}
             >
               <span>{itemInfo[item].icon}</span>
               <b>{itemInfo[item].name}</b>
               <small>
-                {item === "shield"
-                  ? "Автоматически"
-                  : item === "peek"
+                {item === "peek"
                     ? "В дуэли"
+                    : item === "shuffle"
+                      ? "В дуэли"
                     : "На карте"}
               </small>
             </button>
@@ -385,7 +384,7 @@ function DuelScreen({
         </div>
       )}
       <div className="duel-help">
-        <span>↗ Перетащите карту или выберите её и нажмите на цель</span>
+        <span>↗ Перетащите, выберите кликом или сделайте двойной клик для автохода</span>
         <span>Esc — снять выделение · Возврат из оснований запрещён</span>
       </div>
     </div>
@@ -965,7 +964,7 @@ export function App() {
         )}
       </main>
       <footer className={`app-footer ${match && !match.duel && !profile ? "match-footer" : ""}`}>
-        <span>Solitaire Battle Royale</span>
+        <span>Febus · Solitaire Collection</span>
         <span>У каждого игрока есть следующий ход.</span>
         <button onClick={() => setRules(true)}>Правила игры ↗</button>
       </footer>

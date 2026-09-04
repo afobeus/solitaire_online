@@ -14,7 +14,7 @@ const DIRECTIONS: Record<string, "up" | "down" | "left" | "right"> = {
 };
 
 const ITEM_COLORS: Record<Item, number> = {
-  shield: 0x55f4a8,
+  shuffle: 0xffbd59,
   recon: 0x43c8ff,
   peek: 0xc98cff,
 };
@@ -69,8 +69,10 @@ function makeOperative(own: boolean, name: string) {
   const legGeometry = new THREE.CapsuleGeometry(0.1, 0.42, 4, 8);
   const leftLeg = new THREE.Mesh(legGeometry, fabric);
   leftLeg.position.set(-0.16, 0.39, 0);
+  leftLeg.name = "left-leg";
   const rightLeg = leftLeg.clone();
   rightLeg.position.x = 0.16;
+  rightLeg.name = "right-leg";
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.035, 8, 40), glow);
   ring.rotation.x = Math.PI / 2;
   ring.position.y = 0.04;
@@ -90,8 +92,8 @@ function makeLoot(item: Item) {
   const group = new THREE.Group();
   const color = ITEM_COLORS[item];
   const material = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2, metalness: 0.58, roughness: 0.2 });
-  const geometry = item === "shield"
-    ? new THREE.OctahedronGeometry(0.28, 0)
+  const geometry = item === "shuffle"
+    ? new THREE.TorusKnotGeometry(0.21, 0.055, 52, 9)
     : item === "recon"
       ? new THREE.TorusKnotGeometry(0.2, 0.06, 48, 8)
       : new THREE.IcosahedronGeometry(0.28, 1);
@@ -107,6 +109,59 @@ function makeLoot(item: Item) {
   light.position.y = 0.8;
   group.add(object, beam, light);
   group.scale.setScalar(0.74);
+  return group;
+}
+
+function makeLevelObject(kind: MatchView["map"]["objects"][number]["kind"], index: number) {
+  const group = new THREE.Group();
+  const metal = new THREE.MeshStandardMaterial({ color: index % 2 ? 0x344c52 : 0x604333, metalness: 0.48, roughness: 0.52 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x101719, metalness: 0.62, roughness: 0.34 });
+  const concrete = new THREE.MeshStandardMaterial({ color: 0x5a6260, roughness: 0.95 });
+  const emissive = new THREE.MeshStandardMaterial({ color: 0x5bf1a4, emissive: 0x5bf1a4, emissiveIntensity: 3 });
+  if (kind === "container") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.88, 1.05, 0.88), metal);
+    body.position.y = 0.52;
+    group.add(body);
+    for (let stripe = -2; stripe <= 2; stripe += 1) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.91, 0.035, 0.91), dark);
+      rib.position.y = 0.18 + stripe * 0.16 + 0.35;
+      group.add(rib);
+    }
+  } else if (kind === "crate") {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.68, 0.72), metal);
+    body.position.y = 0.34;
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.07, 0.78), dark);
+    top.position.y = 0.7;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.72, 0.09), dark);
+    band.position.y = 0.35;
+    group.add(body, top, band);
+  } else if (kind === "barrier") {
+    const block = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.48, 0.32), concrete);
+    block.position.y = 0.24;
+    block.rotation.y = index % 2 ? Math.PI / 2 : 0;
+    const signal = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.08, 0.34), emissive);
+    signal.position.y = 0.5;
+    signal.rotation.y = block.rotation.y;
+    group.add(block, signal);
+  } else {
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 1.5, 10), dark);
+    mast.position.y = 0.75;
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(0.27, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), metal);
+    dish.position.set(0, 1.3, 0.08);
+    dish.rotation.x = Math.PI / 2.8;
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.065, 10, 8), emissive);
+    beacon.position.y = 1.57;
+    beacon.name = "beacon";
+    group.add(mast, dish, beacon, new THREE.PointLight(0x5bf1a4, 1.4, 2.8));
+    group.children.at(-1)!.position.y = 1.55;
+  }
+  group.rotation.y = (index % 4) * Math.PI / 2;
+  group.traverse((object) => {
+    if (object instanceof THREE.Mesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+    }
+  });
   return group;
 }
 
@@ -156,7 +211,7 @@ function ArenaScene({ match }: { match: MatchView }) {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x071013);
-    scene.fog = new THREE.FogExp2(0x071013, 0.032);
+    scene.fog = new THREE.FogExp2(0x071013, 0.024);
     const camera = new THREE.PerspectiveCamera(48, mount.clientWidth / Math.max(1, mount.clientHeight), 0.1, 100);
     const hemisphere = new THREE.HemisphereLight(0x91bfd2, 0x101315, 1.4);
     const moon = new THREE.DirectionalLight(0xd4f4ff, 4.2);
@@ -187,6 +242,21 @@ function ArenaScene({ match }: { match: MatchView }) {
     base.receiveShadow = true;
     scene.add(base);
 
+    const markingMaterial = new THREE.MeshBasicMaterial({ color: 0x92a69f, transparent: true, opacity: 0.2 });
+    for (const offset of [-size * .24, size * .24]) {
+      const lineX = new THREE.Mesh(new THREE.BoxGeometry(size - 1, .018, .045), markingMaterial);
+      lineX.position.set(0, .005, offset);
+      const lineZ = new THREE.Mesh(new THREE.BoxGeometry(.045, .018, size - 1), markingMaterial);
+      lineZ.position.set(offset, .005, 0);
+      scene.add(lineX, lineZ);
+    }
+
+    match.map.objects.forEach((object, index) => {
+      const prop = makeLevelObject(object.kind, index);
+      prop.position.copy(positionFor(object.x, object.y, size));
+      scene.add(prop);
+    });
+
     const buildingMaterial = new THREE.MeshStandardMaterial({ color: 0x182326, roughness: 0.83, metalness: 0.12 });
     for (let index = 0; index < 22; index += 1) {
       const angle = (index / 22) * Math.PI * 2;
@@ -206,6 +276,17 @@ function ArenaScene({ match }: { match: MatchView }) {
     const nextLines = Array.from({ length: 4 }, () => new THREE.Mesh(new THREE.BoxGeometry(1, 0.045, 0.045), nextMaterial));
     zoneWalls.forEach((wall) => scene.add(wall));
     nextLines.forEach((line) => scene.add(line));
+
+    const sightMaterial = new THREE.MeshBasicMaterial({ color: 0x50d8ff, transparent: true, opacity: .72, depthWrite: false });
+    const sightLines = Array.from({ length: 4 }, () => new THREE.Mesh(new THREE.BoxGeometry(1, .035, .035), sightMaterial));
+    const sightArea = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: 0x44cfff, transparent: true, opacity: .028, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    sightArea.rotation.x = -Math.PI / 2;
+    sightArea.position.y = .025;
+    sightLines.forEach((line) => { line.position.y = .065; scene.add(line); });
+    scene.add(sightArea);
 
     const playerObjects = new Map<number, THREE.Group>();
     const lootObjects = new Map<string, THREE.Group>();
@@ -271,8 +352,25 @@ function ArenaScene({ match }: { match: MatchView }) {
         if (!visiblePlayers.has(id)) group.visible = false;
         const target = desired.get(id);
         if (target && group.visible) {
-          group.position.lerp(target, 0.13);
-          group.rotation.y = Math.sin(elapsed * 0.001 + id) * 0.12;
+          const dx = target.x - group.position.x;
+          const dz = target.z - group.position.z;
+          const moving = Math.hypot(dx, dz) > .025;
+          if (moving) {
+            const desiredAngle = Math.atan2(dx, dz);
+            let delta = desiredAngle - group.rotation.y;
+            delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+            group.rotation.y += delta * .2;
+          }
+          group.position.x += dx * .115;
+          group.position.z += dz * .115;
+          group.position.y = moving ? Math.abs(Math.sin(elapsed * .017 + id)) * .055 : 0;
+          const leftLeg = group.getObjectByName("left-leg");
+          const rightLeg = group.getObjectByName("right-leg");
+          if (leftLeg && rightLeg) {
+            const stride = moving ? Math.sin(elapsed * .018) * .55 : 0;
+            leftLeg.rotation.x = stride;
+            rightLeg.rotation.x = -stride;
+          }
           group.traverse((object) => { object.visible = group!.visible; });
         }
       }
@@ -295,9 +393,27 @@ function ArenaScene({ match }: { match: MatchView }) {
       const self = state.map.players.find((player) => player.id === state.self.id);
       if (self && state.self.status !== "eliminated") {
         const selfPosition = positionFor(self.x, self.y, size);
-        cameraDesired.set(selfPosition.x + 1.8, 9.2, selfPosition.z + 8.8);
+        const visionSpan = state.map.vision * 2 + 1;
+        const visionEdge = visionSpan / 2;
+        sightArea.visible = true;
+        sightArea.position.set(selfPosition.x, .02, selfPosition.z);
+        sightArea.scale.set(visionSpan, visionSpan, 1);
+        sightLines.forEach((line) => { line.visible = true; });
+        sightLines[0].position.set(selfPosition.x, .07, selfPosition.z - visionEdge);
+        sightLines[1].position.set(selfPosition.x, .07, selfPosition.z + visionEdge);
+        sightLines[2].position.set(selfPosition.x - visionEdge, .07, selfPosition.z);
+        sightLines[3].position.set(selfPosition.x + visionEdge, .07, selfPosition.z);
+        sightLines[0].scale.set(visionSpan, 1, 1);
+        sightLines[1].scale.set(visionSpan, 1, 1);
+        sightLines[2].scale.set(visionSpan, 1, 1);
+        sightLines[3].scale.set(visionSpan, 1, 1);
+        sightLines[2].rotation.y = sightLines[3].rotation.y = Math.PI / 2;
+        sightMaterial.opacity = .5 + Math.sin(elapsed * .004) * .22;
+        cameraDesired.set(selfPosition.x + 2.2, 10.4, selfPosition.z + 10.2);
         cameraTarget.set(selfPosition.x, 0.55, selfPosition.z - 2.4);
       } else {
+        sightArea.visible = false;
+        sightLines.forEach((line) => { line.visible = false; });
         cameraDesired.set(0, 11.5, 10.5);
         cameraTarget.set(0, 0, 0);
       }
@@ -349,8 +465,18 @@ function TacticalRadar({ match }: { match: MatchView }) {
     <div className="hud-radar" aria-label="Тактический радар">
       <div className="radar-north">С</div>
       <div className="radar-grid" />
+      <div
+        className="radar-vision"
+        style={{
+          width: `${((match.map.vision * 2 + 1) / match.map.size) * 100}%`,
+          height: `${((match.map.vision * 2 + 1) / match.map.size) * 100}%`,
+          left: scale(match.self.x),
+          top: scale(match.self.y),
+        }}
+      />
       <div className="radar-zone" style={{ width: zoneSize, height: zoneSize, left: zoneOffset, top: zoneOffset }} />
       {nextSize && <div className="radar-next" style={{ width: nextSize, height: nextSize, left: nextOffset!, top: nextOffset! }} />}
+      {match.map.objects.map((object, index) => <span key={`${object.x}-${object.y}-${index}`} className={`radar-object ${object.kind}`} style={{ left: scale(object.x), top: scale(object.y) }} />)}
       {match.map.loot.map((loot) => <span key={loot.id} className={`radar-dot loot ${loot.item}`} style={{ left: scale(loot.x), top: scale(loot.y) }} title={itemInfo[loot.item].name} />)}
       {match.map.players.map((player) => <span key={player.id} className={`radar-dot ${player.id === match.self.id ? "self" : "enemy"} ${player.status}`} style={{ left: scale(player.x), top: scale(player.y) }} title={player.name} />)}
       <div className="radar-sweep" />
@@ -384,7 +510,7 @@ export function ArenaMap({ match, now, send }: { match: MatchView; now: number; 
       <ArenaScene match={match} />
       <div className="world-vignette" />
       <div className="hud-top-left">
-        <span className="hud-eyebrow">ОПЕРАЦИЯ SBR · СЕКТОР {match.map.inset + 1}</span>
+        <span className="hud-eyebrow">ОПЕРАЦИЯ FEBUS · СЕКТОР {match.map.inset + 1}</span>
         <strong>{match.map.final ? "ФИНАЛЬНОЕ СТОЛКНОВЕНИЕ" : "СЖАТИЕ ПЕРИМЕТРА"}</strong>
         <small>КООРДИНАТЫ {String(self?.x ?? match.self.x).padStart(2, "0")} : {String(self?.y ?? match.self.y).padStart(2, "0")}</small>
       </div>

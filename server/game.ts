@@ -13,7 +13,7 @@ import { config } from "./config.js";
 import { Database, type User } from "./db.js";
 import { Rooms } from "./rooms.js";
 import { createDuel, overtime, shuffled, type Duel } from "./duels.js";
-import { cells, distance, inside, spawnPositions } from "./map.js";
+import { blocked, cells, distance, inside, levelObjects, spawnPositions } from "./map.js";
 import { initialLoot, pickup, type Loot } from "./items.js";
 interface Player extends Person {
   x: number;
@@ -137,6 +137,7 @@ export class Game {
       }[cmd.direction];
       const pos = { x: p.x + dx, y: p.y + dy };
       if (!inside(pos, 0)) throw new Error("Это край карты.");
+      if (blocked(pos)) throw new Error("Путь перекрыт объектом.");
       if (
         [...m.players.values()].some(
           (other) =>
@@ -156,14 +157,12 @@ export class Game {
     if (cmd.type === "item") {
       const slot = p.inventory.indexOf(cmd.item);
       if (slot < 0) throw new Error("У вас нет этого предмета.");
-      if (cmd.item === "shield")
-        throw new Error("Щит срабатывает автоматически при поражении в дуэли.");
       if (cmd.item === "recon") {
         if (p.status !== "free")
           throw new Error("Разведка доступна только на карте.");
         if (p.reconUntil > now) throw new Error("Разведка уже действует.");
         p.reconUntil = now + config.reconMs;
-      } else {
+      } else if (cmd.item === "peek") {
         const d = m.duels.get(p.duelId ?? "");
         if (!d) throw new Error("Подсмотреть можно только во время дуэли.");
         if (now < d.startAt) throw new Error("Дождитесь начала дуэли.");
@@ -176,6 +175,18 @@ export class Game {
           until: now + config.peekMs,
           cards: d.boards.get(opponent)!.stock.slice(-3).reverse().map(card=>({...card})),
         });
+      } else {
+        const d = m.duels.get(p.duelId ?? "");
+        if (!d) throw new Error("Перетасовка доступна только во время дуэли.");
+        if (now < d.startAt) throw new Error("Дождитесь начала дуэли.");
+        const board = d.boards.get(id)!;
+        const remaining = [...board.stock, ...board.waste];
+        if (remaining.length < 2)
+          throw new Error("Для перетасовки недостаточно карт. Предмет сохранён.");
+        board.stock = shuffled(remaining);
+        board.waste = [];
+        d.revisions.set(id, d.revisions.get(id)! + 1);
+        this.notice(id, "Колода добора и сброс перемешаны.");
       }
       p.inventory.splice(slot, 1);
       return;
@@ -318,7 +329,6 @@ export class Game {
     winner: number | null,
     reason: string,
     now: number,
-    forfeit = false,
   ) {
     if (d.resolved || m.phase !== "running") return;
     d.resolved = true;
@@ -331,15 +341,8 @@ export class Game {
         this.returnInside(m, p, now);
         this.notice(id, `Дуэль выиграна. ${reason}`);
       } else {
-        const shield = p.inventory.indexOf("shield");
-        if (!forfeit && shield >= 0) {
-          p.inventory.splice(shield, 1);
-          this.returnInside(m, p, now);
-          this.notice(id, `Щит спас вас от поражения. ${reason}`);
-        } else {
-          this.eliminate(m, id, `Поражение в дуэли. ${reason}`);
-          this.notice(id, `Дуэль проиграна. ${reason}`);
-        }
+        this.eliminate(m, id, `Поражение в дуэли. ${reason}`);
+        this.notice(id, `Дуэль проиграна. ${reason}`);
       }
     }
     m.duels.delete(d.id);
@@ -356,7 +359,6 @@ export class Game {
           alive[0] ?? null,
           "Соперник покинул матч или не переподключился.",
           now,
-          true,
         );
     }
   }
@@ -561,6 +563,7 @@ export class Game {
         nextInset: next?.inset ?? null,
         nextAt: next ? m.startedAt + next.afterMs : null,
         final: m.final,
+        objects: levelObjects.map((object) => ({ ...object })),
         players: [...m.players.values()]
           .filter(
             (v) =>

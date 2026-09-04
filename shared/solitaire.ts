@@ -112,6 +112,19 @@ export function canMove(b: BoardView, from: Source, to: Destination): boolean {
     ? top.rank === first.rank + 1 && red(top) !== red(first)
     : target.hidden === 0 && first.rank === 13;
 }
+export function automaticDestination(
+  board: BoardView,
+  from: Source,
+): Destination | null {
+  const foundation = suits
+    .map((_, column): Destination => ({ type: "foundation", column }))
+    .find((to) => canMove(board, from, to));
+  if (foundation) return foundation;
+  const tableau = board.tableau
+    .map((_, column): Destination => ({ type: "tableau", column }))
+    .filter((to) => canMove(board, from, to));
+  return tableau.length === 1 ? tableau[0] : null;
+}
 export function applyAction(board: Board, action: CardAction): Board | null {
   if (
     action.type === "move" &&

@@ -1,6 +1,6 @@
 services:
   app:
-    image: ${IMAGE_NAME:-solitaire-br:local}
+    image: ${IMAGE_NAME:-febus:local}
     build: .
     restart: unless-stopped
     init: true

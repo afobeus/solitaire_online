@@ -1,14 +1,14 @@
 import { z } from "zod";
 import type { BoardView, Card } from "./solitaire.js";
-export type Item = "shield" | "recon" | "peek";
+export type Item = "shuffle" | "recon" | "peek";
 export const itemInfo: Record<
   Item,
   { name: string; icon: string; description: string }
 > = {
-  shield: {
-    name: "Щит",
-    icon: "⬡",
-    description: "Автоматически спасает от одного поражения в дуэли.",
+  shuffle: {
+    name: "Перетасовка",
+    icon: "⟳",
+    description: "Во время дуэли перемешивает оставшиеся карты добора и сброса.",
   },
   recon: {
     name: "Разведка",
@@ -67,7 +67,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("item"),
-      item: z.enum(["shield", "recon", "peek"]),
+      item: z.enum(["shuffle", "recon", "peek"]),
     })
     .strict(),
   z
@@ -108,6 +108,7 @@ export interface MapView {
   nextInset: number | null;
   nextAt: number | null;
   final: boolean;
+  objects: { x: number; y: number; kind: "crate" | "container" | "barrier" | "relay" }[];
   players: (Person & { x: number; y: number; protected: boolean })[];
   loot: { id: string; x: number; y: number; item: Item }[];
 }
