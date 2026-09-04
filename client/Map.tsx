@@ -19,6 +19,13 @@ const ITEM_COLORS: Record<Item, number> = {
   peek: 0xc98cff,
 };
 
+const FACING_ANGLE = {
+  up: 0,
+  down: Math.PI,
+  left: Math.PI / 2,
+  right: -Math.PI / 2,
+} as const;
+
 function positionFor(x: number, y: number, size: number) {
   return new THREE.Vector3(x - (size - 1) / 2, 0, y - (size - 1) / 2);
 }
@@ -351,16 +358,15 @@ function ArenaScene({ match }: { match: MatchView }) {
       for (const [id, group] of playerObjects) {
         if (!visiblePlayers.has(id)) group.visible = false;
         const target = desired.get(id);
-        if (target && group.visible) {
+        const player = state.map.players.find((candidate) => candidate.id === id);
+        if (target && player && group.visible) {
           const dx = target.x - group.position.x;
           const dz = target.z - group.position.z;
           const moving = Math.hypot(dx, dz) > .025;
-          if (moving) {
-            const desiredAngle = Math.atan2(dx, dz);
-            let delta = desiredAngle - group.rotation.y;
-            delta = Math.atan2(Math.sin(delta), Math.cos(delta));
-            group.rotation.y += delta * .2;
-          }
+          const desiredAngle = FACING_ANGLE[player.facing];
+          let delta = desiredAngle - group.rotation.y;
+          delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+          group.rotation.y += delta * .2;
           group.position.x += dx * .115;
           group.position.z += dz * .115;
           group.position.y = moving ? Math.abs(Math.sin(elapsed * .017 + id)) * .055 : 0;

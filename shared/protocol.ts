@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { BoardView, Card } from "./solitaire.js";
 export type Item = "shuffle" | "recon" | "peek";
+export type Direction = "up" | "down" | "left" | "right";
 export const itemInfo: Record<
   Item,
   { name: string; icon: string; description: string }
@@ -72,9 +73,23 @@ export const commandSchema = z.discriminatedUnion("type", [
     .strict(),
   z
     .object({
+      type: z.literal("duel.undo"),
+      duelId: z.string().max(64),
+      round: z.literal(1),
+      revision: z.number().int().min(0),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("duel.surrender"),
+      duelId: z.string().max(64),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("card"),
       duelId: z.string().max(64),
-      round: z.number().int().min(1).max(2),
+      round: z.literal(1),
       revision: z.number().int().min(0),
       action,
     })
@@ -109,12 +124,17 @@ export interface MapView {
   nextAt: number | null;
   final: boolean;
   objects: { x: number; y: number; kind: "crate" | "container" | "barrier" | "relay" }[];
-  players: (Person & { x: number; y: number; protected: boolean })[];
+  players: (Person & {
+    x: number;
+    y: number;
+    protected: boolean;
+    facing: Direction;
+  })[];
   loot: { id: string; x: number; y: number; item: Item }[];
 }
 export interface DuelView {
   id: string;
-  round: 1 | 2;
+  round: 1;
   startAt: number;
   endAt: number;
   opponent: Person;
@@ -122,6 +142,9 @@ export interface DuelView {
   opponentBoard: BoardView;
   revision: number;
   opponentRevision: number;
+  frozenAt: number | null;
+  autoFinisher: number | null;
+  canUndo: boolean;
   peek: { cards: Card[]; until: number } | null;
 }
 export interface ResultView {

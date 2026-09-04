@@ -35,14 +35,14 @@ function Rules() {
       </p>
       <p>
         За 6 минут выигрывает собравший больше карт в основаниях. Затем
-        сравниваются открытые карты. При ничьей — новый расклад на 30 секунд до
-        первого основания. Если очков снова нет, победителя определяет
-        жеребьёвка. Решаемость расклада не гарантируется.
+        сравниваются открытые карты. При полном равенстве оба игрока выживают и
+        возвращаются на карту. Решаемость расклада не гарантируется.
       </p>
       <p>
         «Перетасовка» меняет порядок оставшихся карт добора и сброса во время
         дуэли. Двойной клик автоматически отправляет карту в однозначно
-        допустимую позицию. В финале оставшиеся игроки встречаются в дуэлях.
+        допустимую позицию. Ход можно отменить. Когда добор пуст и все закрытые
+        карты открыты, таймер останавливается и начинается автосборка.
       </p>
     </div>
   );
@@ -260,22 +260,28 @@ function DuelScreen({
   online: boolean;
   errorId: number;
 }) {
+  const [confirmSurrender, setConfirmSurrender] = useState(false);
   const d = match.duel!,
-    countdown = now < d.startAt;
+    countdown = now < d.startAt,
+    autoFinishing = d.autoFinisher !== null,
+    clockNow = d.frozenAt ?? now;
+  useEffect(() => {
+    if (!confirmSurrender) return;
+    const timer = setTimeout(() => setConfirmSurrender(false), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmSurrender]);
   return (
     <div className="duel-screen">
       <div className="page-heading">
         <div>
           <span className="eyebrow">
-            {d.round === 2
-              ? "Дополнительный раунд"
-              : "Дуэль · Одинаковый расклад"}
+            Дуэль · Одинаковый расклад
           </span>
           <h1>Игра на выбывание</h1>
         </div>
-        <div className={`duel-clock ${d.endAt - now < 15000 ? "urgent" : ""}`}>
-          <span>{countdown ? "До начала" : "Осталось"}</span>
-          <strong>{timeLeft(countdown ? d.startAt : d.endAt, now)}</strong>
+        <div className={`duel-clock ${d.endAt - clockNow < 15000 ? "urgent" : ""} ${autoFinishing ? "frozen" : ""}`}>
+          <span>{countdown ? "До начала" : autoFinishing ? "Время остановлено" : "Осталось"}</span>
+          <strong>{timeLeft(countdown ? d.startAt : d.endAt, countdown ? now : clockNow)}</strong>
         </div>
       </div>
       <div className="duel-inventory">
@@ -283,15 +289,42 @@ function DuelScreen({
           match={match}
           send={send}
           now={now}
-          disabled={!online || countdown}
+          disabled={!online || countdown || autoFinishing}
         />
         <p>
-          {d.round === 2
-            ? "Первая карта в основании принесёт победу."
-            : "Собирайте основания. При равном счёте решают открытые карты."}
+          Собирайте основания. При полном равенстве оба игрока выживают.
           <br />
           <span className="muted">Во время дуэли зона не действует.</span>
         </p>
+        <div className="duel-actions">
+          <button
+            className="secondary-button undo-button"
+            disabled={!online || countdown || autoFinishing || !d.canUndo}
+            onClick={() =>
+              send({
+                type: "duel.undo",
+                duelId: d.id,
+                round: d.round,
+                revision: d.revision,
+              })
+            }
+          >
+            ↶ Отменить ход
+          </button>
+          <button
+            className={`secondary-button surrender-button ${confirmSurrender ? "confirm" : ""}`}
+            disabled={!online || autoFinishing}
+            onClick={() => {
+              if (!confirmSurrender) {
+                setConfirmSurrender(true);
+                return;
+              }
+              send({ type: "duel.surrender", duelId: d.id });
+            }}
+          >
+            {confirmSurrender ? "Подтвердить сдачу" : "Сдаться"}
+          </button>
+        </div>
       </div>
       <div className="duel-scroll">
         <div className="duel-fields">
@@ -323,6 +356,7 @@ function DuelScreen({
               readonly
               revision={d.opponentRevision}
               errorId={0}
+              autoFinishing={d.autoFinisher === d.opponent.id}
             />
           </section>
           <section className="board-panel own-panel">
@@ -348,9 +382,10 @@ function DuelScreen({
             </div>
             <Board
               board={d.own}
-              disabled={!online || countdown || now >= d.endAt}
+              disabled={!online || countdown || autoFinishing || now >= d.endAt}
               revision={d.revision + d.round * 100000}
               errorId={errorId}
+              autoFinishing={d.autoFinisher === match.self.id}
               onAction={(action) =>
                 send({
                   type: "card",
@@ -371,6 +406,17 @@ function DuelScreen({
           <p>Оба поля откроются одновременно</p>
         </div>
       )}
+      {autoFinishing && (
+        <div className="auto-finish-banner" aria-live="polite">
+          <span>✦ Автосборка</span>
+          <strong>
+            {d.autoFinisher === match.self.id
+              ? "Все карты открыты — расклад завершён"
+              : "Соперник открыл все карты"}
+          </strong>
+          <small>Карты отправляются в основания</small>
+        </div>
+      )}
       {d.peek && d.peek.until > now && (
         <div className="peek-strip">
           <span>
@@ -385,7 +431,7 @@ function DuelScreen({
       )}
       <div className="duel-help">
         <span>↗ Перетащите, выберите кликом или сделайте двойной клик для автохода</span>
-        <span>Esc — снять выделение · Возврат из оснований запрещён</span>
+        <span>Esc — снять выделение · ↶ отменить последний ход</span>
       </div>
     </div>
   );

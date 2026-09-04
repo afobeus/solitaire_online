@@ -23,7 +23,6 @@ export const config = {
   disconnectMs: integer("DISCONNECT_MS", 20000, 1000),
   countdownMs: integer("COUNTDOWN_MS", 3000, 0),
   duelMs: integer("DUEL_MS", 360000),
-  overtimeMs: integer("OVERTIME_MS", 30000),
   protectionMs: integer("PROTECTION_MS", 5000),
   outsideMs: integer("OUTSIDE_MS", 10000),
   reconMs: integer("RECON_MS", 8000),

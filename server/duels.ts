@@ -12,13 +12,20 @@ export function shuffled<T>(items: T[]): T[] {
 export interface Duel {
   id: string;
   players: [number, number];
-  round: 1 | 2;
+  round: 1;
   startAt: number;
   endAt: number;
   boards: Map<number, Board>;
   revisions: Map<number, number>;
+  histories: Map<number, Board[]>;
   resolved: boolean;
   peeks: Map<number, { until:number; cards:Card[] }>;
+  autoFinish: {
+    player: number;
+    startedAt: number;
+    nextStepAt: number;
+    completeAt: number | null;
+  } | null;
 }
 export function createDuel(a: number, b: number, now: number): Duel {
   const board = deal(shuffled(orderedDeck())),
@@ -37,18 +44,12 @@ export function createDuel(a: number, b: number, now: number): Duel {
       [a, 0],
       [b, 0],
     ]),
+    histories: new Map([
+      [a, []],
+      [b, []],
+    ]),
     resolved: false,
     peeks: new Map(),
+    autoFinish: null,
   };
-}
-export function overtime(d: Duel, now: number) {
-  const board = deal(shuffled(orderedDeck()));
-  d.round = 2;
-  d.startAt = now + config.countdownMs;
-  d.endAt = d.startAt + config.overtimeMs;
-  d.peeks.clear();
-  d.players.forEach((id) => {
-    d.boards.set(id, structuredClone(board));
-    d.revisions.set(id, 0);
-  });
 }

@@ -983,6 +983,10 @@ input::placeholder {
 .duel-clock.urgent strong {
   color: var(--red);
 }
+.duel-clock.frozen strong {
+  color: #ffd071;
+  text-shadow: 0 0 18px #ffc55d55;
+}
 .duel-inventory {
   display: flex;
   align-items: center;
@@ -1012,6 +1016,30 @@ input::placeholder {
 .duel-inventory > p {
   font-size: 12px;
   margin: 0;
+  flex: 1;
+}
+.duel-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.duel-actions button {
+  min-width: 128px;
+  white-space: nowrap;
+}
+.undo-button:not(:disabled):hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+.surrender-button {
+  color: #ffaaa1;
+  border-color: #74433e;
+}
+.surrender-button.confirm {
+  background: #5a211f;
+  border-color: #ff756b;
+  color: white;
+  animation: surrender-pulse .7s ease-in-out infinite alternate;
 }
 .duel-fields {
   display: grid;
@@ -1254,6 +1282,30 @@ input::placeholder {
 .board-waiting {
   filter: saturate(0.5) brightness(0.8);
 }
+.solitaire-board.auto-finishing {
+  filter: none;
+  pointer-events: none;
+}
+.solitaire-board.auto-finishing .foundation .playing-card {
+  animation: auto-home-flight .62s cubic-bezier(.18,.78,.2,1.08) both;
+  box-shadow: 0 12px 30px #000a, 0 0 22px #b6ed7566;
+}
+.solitaire-board.auto-finishing .foundation:nth-child(4) .playing-card {
+  --flight-x: -190px;
+  --flight-rotate: -13deg;
+}
+.solitaire-board.auto-finishing .foundation:nth-child(5) .playing-card {
+  --flight-x: -70px;
+  --flight-rotate: -6deg;
+}
+.solitaire-board.auto-finishing .foundation:nth-child(6) .playing-card {
+  --flight-x: 70px;
+  --flight-rotate: 6deg;
+}
+.solitaire-board.auto-finishing .foundation:nth-child(7) .playing-card {
+  --flight-x: 190px;
+  --flight-rotate: 13deg;
+}
 @keyframes reject {
   0%,
   100% {
@@ -1270,6 +1322,49 @@ input::placeholder {
   0% { opacity: 0; transform: translate3d(0, -18px, 0) rotate(-2deg) scale(.92); }
   65% { opacity: 1; transform: translate3d(0, 2px, 0) rotate(.5deg) scale(1.015); }
   100% { opacity: 1; transform: none; }
+}
+@keyframes auto-home-flight {
+  0% {
+    opacity: 0;
+    transform: translate3d(var(--flight-x, 0), 260px, 0)
+      rotate(var(--flight-rotate, -8deg)) scale(.82);
+  }
+  62% {
+    opacity: 1;
+    transform: translate3d(0, -9px, 0) rotate(1.5deg) scale(1.06);
+  }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes surrender-pulse {
+  to { box-shadow: 0 0 18px #ff514755; }
+}
+.auto-finish-banner {
+  position: fixed;
+  z-index: 14;
+  top: 82px;
+  left: 50%;
+  display: grid;
+  min-width: 340px;
+  padding: 10px 22px;
+  transform: translateX(-50%);
+  border: 1px solid #d9ad5f99;
+  border-radius: 7px;
+  background: linear-gradient(105deg, #0b1513ed, #30230fed, #0b1513ed);
+  box-shadow: 0 12px 35px #000a, 0 0 24px #ffc35d28;
+  text-align: center;
+  animation: finish-banner-in .45s cubic-bezier(.2,.85,.3,1.15) both;
+}
+.auto-finish-banner span {
+  color: #ffd47d;
+  font-size: 9px;
+  letter-spacing: .19em;
+  text-transform: uppercase;
+}
+.auto-finish-banner strong { font: 600 14px/1.5 Manrope, sans-serif; }
+.auto-finish-banner small { color: var(--muted); font-size: 9px; }
+@keyframes finish-banner-in {
+  from { opacity: 0; transform: translate(-50%, -18px) scale(.94); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 .duel-help {
   display: flex;

@@ -53,6 +53,7 @@ export function Board({
   disabled = false,
   revision,
   errorId,
+  autoFinishing = false,
   onAction,
 }: {
   board: BoardView;
@@ -60,6 +61,7 @@ export function Board({
   disabled?: boolean;
   revision: number;
   errorId: number;
+  autoFinishing?: boolean;
   onAction?: (action: CardAction) => void;
 }) {
   const [selected, setSelected] = useState<Source | null>(null),
@@ -137,7 +139,7 @@ export function Board({
   }
   return (
     <div
-      className={`solitaire-board ${readonly ? "opponent-board" : ""} ${rejected ? "rejected" : ""} ${disabled ? "board-waiting" : ""}`}
+      className={`solitaire-board ${readonly ? "opponent-board" : ""} ${rejected ? "rejected" : ""} ${disabled ? "board-waiting" : ""} ${autoFinishing ? "auto-finishing" : ""}`}
       onKeyDown={(e) => {
         if (e.key === "Escape") setSelected(null);
       }}

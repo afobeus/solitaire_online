@@ -125,6 +125,46 @@ export function automaticDestination(
     .filter((to) => canMove(board, from, to));
   return tableau.length === 1 ? tableau[0] : null;
 }
+export function canAutoFinish(board: Board): boolean {
+  return (
+    board.stock.length === 0 &&
+    board.tableau.every((column) => column.down.length === 0)
+  );
+}
+
+// Auto-finish is only entered after every hidden card has been revealed. At that
+// point the result is fixed, so cards can be presented in foundation order
+// without running a solver or exposing any hidden information to the client.
+export function autoFoundationBatch(board: Board, limit = 4): Board | null {
+  const next: Board = structuredClone(board);
+  let moved = 0;
+  const take = (suit: Suit, rank: number): Card | null => {
+    const waste = next.waste.findIndex(
+      (card) => card.suit === suit && card.rank === rank,
+    );
+    if (waste >= 0) return next.waste.splice(waste, 1)[0];
+    const stock = next.stock.findIndex(
+      (card) => card.suit === suit && card.rank === rank,
+    );
+    if (stock >= 0) return next.stock.splice(stock, 1)[0];
+    for (const column of next.tableau) {
+      const index = column.up.findIndex(
+        (card) => card.suit === suit && card.rank === rank,
+      );
+      if (index >= 0) return column.up.splice(index, 1)[0];
+    }
+    return null;
+  };
+  for (let column = 0; column < suits.length && moved < limit; column++) {
+    const rank = next.foundations[column].length + 1;
+    if (rank > 13) continue;
+    const card = take(suits[column], rank);
+    if (!card) continue;
+    next.foundations[column].push(card);
+    moved++;
+  }
+  return moved ? next : null;
+}
 export function applyAction(board: Board, action: CardAction): Board | null {
   if (
     action.type === "move" &&

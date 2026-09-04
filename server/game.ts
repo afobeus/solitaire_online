@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type {
   ClientState,
   Command,
@@ -7,17 +7,25 @@ import type {
   Person,
   ResultView,
   Item,
+  Direction,
 } from "../shared/protocol.js";
-import { applyAction, boardView, score } from "../shared/solitaire.js";
+import {
+  applyAction,
+  autoFoundationBatch,
+  boardView,
+  canAutoFinish,
+  score,
+} from "../shared/solitaire.js";
 import { config } from "./config.js";
 import { Database, type User } from "./db.js";
 import { Rooms } from "./rooms.js";
-import { createDuel, overtime, shuffled, type Duel } from "./duels.js";
+import { createDuel, shuffled, type Duel } from "./duels.js";
 import { blocked, cells, distance, inside, levelObjects, spawnPositions } from "./map.js";
 import { initialLoot, pickup, type Loot } from "./items.js";
 interface Player extends Person {
   x: number;
   y: number;
+  facing: Direction;
   inventory: Item[];
   duelId: string | null;
   disconnectedAt: number | null;
@@ -147,6 +155,7 @@ export class Game {
         throw new Error("Клетка занята дуэлью.");
       p.x = pos.x;
       p.y = pos.y;
+      p.facing = cmd.direction;
       p.lastMove = now;
       p.outsideSince = inside(p, m.inset) ? null : (p.outsideSince ?? now);
       const message = pickup(p.inventory, m.loot, p);
@@ -179,16 +188,48 @@ export class Game {
         const d = m.duels.get(p.duelId ?? "");
         if (!d) throw new Error("Перетасовка доступна только во время дуэли.");
         if (now < d.startAt) throw new Error("Дождитесь начала дуэли.");
+        if (d.autoFinish)
+          throw new Error("Автосборка уже завершает эту дуэль.");
         const board = d.boards.get(id)!;
         const remaining = [...board.stock, ...board.waste];
         if (remaining.length < 2)
           throw new Error("Для перетасовки недостаточно карт. Предмет сохранён.");
         board.stock = shuffled(remaining);
         board.waste = [];
+        d.histories.set(id, []);
         d.revisions.set(id, d.revisions.get(id)! + 1);
         this.notice(id, "Колода добора и сброс перемешаны.");
       }
       p.inventory.splice(slot, 1);
+      return;
+    }
+    if (cmd.type === "duel.surrender") {
+      const d = m.duels.get(p.duelId ?? "");
+      if (!d || d.resolved || d.id !== cmd.duelId)
+        throw new Error("Эта дуэль уже завершена.");
+      const opponent = d.players.find((playerId) => playerId !== id)!;
+      this.resolve(m, d, opponent, "Соперник сдался.", now);
+      this.maybeFinish(m, now);
+      return;
+    }
+    if (cmd.type === "duel.undo") {
+      const d = m.duels.get(p.duelId ?? "");
+      if (
+        !d ||
+        d.resolved ||
+        d.id !== cmd.duelId ||
+        d.round !== cmd.round
+      )
+        throw new Error("Эта дуэль уже завершена.");
+      if (now < d.startAt) throw new Error("Дуэль ещё не началась.");
+      if (now >= d.endAt) throw new Error("Время дуэли истекло.");
+      if (d.autoFinish) throw new Error("Автосборку отменить нельзя.");
+      if (cmd.revision !== d.revisions.get(id))
+        throw new Error("Поле обновилось. Повторите действие.");
+      const previous = d.histories.get(id)!.pop();
+      if (!previous) throw new Error("Нет хода, который можно отменить.");
+      d.boards.set(id, previous);
+      d.revisions.set(id, cmd.revision + 1);
       return;
     }
     if (cmd.type === "card") {
@@ -198,25 +239,40 @@ export class Game {
       if (now < d.startAt)
         throw new Error("Дождитесь окончания обратного отсчёта.");
       if (now >= d.endAt) throw new Error("Время дуэли истекло.");
+      if (d.autoFinish)
+        throw new Error("Автосборка уже завершает эту дуэль.");
       if (cmd.revision !== d.revisions.get(id))
         throw new Error("Поле обновилось. Повторите ход.");
-      const b = applyAction(d.boards.get(id)!, cmd.action);
+      const current = d.boards.get(id)!;
+      const b = applyAction(current, cmd.action);
       if (!b)
         throw new Error(
           "Недопустимый ход. Проверьте масть, цвет и порядок карт.",
         );
+      const history = d.histories.get(id)!;
+      history.push(structuredClone(current));
+      if (history.length > 100) history.shift();
       d.boards.set(id, b);
       d.revisions.set(id, cmd.revision + 1);
-      if (score(b) === 52 || (d.round === 2 && score(b) > 0))
+      if (score(b) === 52)
         this.resolve(
           m,
           d,
           id,
-          d.round === 2
-            ? "Первая карта в основании дополнительного раунда."
-            : "Пасьянс собран полностью.",
+          "Пасьянс собран полностью.",
           now,
         );
+      else if (canAutoFinish(b)) {
+        d.autoFinish = {
+          player: id,
+          startedAt: now,
+          nextStepAt: now + config.tickMs,
+          completeAt: null,
+        };
+        this.notice(id, "Все карты открыты. Запущена автосборка.");
+        const opponent = d.players.find((playerId) => playerId !== id)!;
+        this.notice(opponent, "Соперник запустил автосборку.");
+      }
       this.maybeFinish(m, now);
     }
   }
@@ -243,6 +299,7 @@ export class Game {
           connected: true,
           status: "free",
           ...positions[i],
+          facing: "down",
           inventory: [],
           duelId: null,
           disconnectedAt: null,
@@ -347,6 +404,17 @@ export class Game {
     }
     m.duels.delete(d.id);
   }
+  private resolveDraw(m: Match, d: Duel, now: number) {
+    if (d.resolved || m.phase !== "running") return;
+    d.resolved = true;
+    for (const id of d.players) {
+      const player = m.players.get(id)!;
+      if (player.status === "eliminated") continue;
+      this.returnInside(m, player, now);
+      this.notice(id, "Ничья: оба игрока выжили и вернулись на карту.");
+    }
+    m.duels.delete(d.id);
+  }
   private resolveAbandoned(m: Match, now: number) {
     for (const d of m.duels.values()) {
       const alive = d.players.filter(
@@ -437,20 +505,38 @@ export class Game {
     this.resolveAbandoned(m, now);
     for (const d of m.duels.values()) {
       for (const [id, peek] of d.peeks) if (peek.until <= now) d.peeks.delete(id);
+      if (d.autoFinish && !d.resolved) {
+        const state = d.autoFinish;
+        const board = d.boards.get(state.player)!;
+        if (state.completeAt !== null) {
+          if (now - state.completeAt >= 750)
+            this.resolve(
+              m,
+              d,
+              state.player,
+              "Все карты были открыты и автоматически собраны.",
+              now,
+            );
+          continue;
+        }
+        if (now >= state.nextStepAt) {
+          const next = autoFoundationBatch(board, 4);
+          if (next) {
+            d.boards.set(state.player, next);
+            d.revisions.set(
+              state.player,
+              d.revisions.get(state.player)! + 1,
+            );
+            state.nextStepAt = now + config.tickMs;
+            if (score(next) === 52) state.completeAt = now;
+          }
+        }
+        continue;
+      }
       if (now < d.endAt || d.resolved) continue;
       // Timers advance even if both peers are absent. Match victory still waits
       // for a connected survivor or expiration of all reconnect deadlines.
       const [a, b] = d.players;
-      if (d.round === 2) {
-        this.resolve(
-          m,
-          d,
-          d.players[randomInt(2)],
-          "В дополнительном раунде никто не набрал очков. Победитель определён жеребьёвкой.",
-          now,
-        );
-        continue;
-      }
       const ba = d.boards.get(a)!,
         bb = d.boards.get(b)!;
       const delta = score(ba) - score(bb) || ba.revealed - bb.revealed;
@@ -464,15 +550,7 @@ export class Game {
             : "Открыто больше закрытых карт.",
           now,
         );
-      else {
-        overtime(d, now);
-        d.players.forEach((id) =>
-          this.notice(
-            id,
-            "Ничья. Новый расклад: первая карта в основании решит исход.",
-          ),
-        );
-      }
+      else this.resolveDraw(m, d, now);
     }
     this.maybeFinish(m, now);
     if (this.isFinished(m)) return;
@@ -539,6 +617,9 @@ export class Game {
         opponentBoard: boardView(d.boards.get(opponent)!),
         revision: d.revisions.get(id)!,
         opponentRevision: d.revisions.get(opponent)!,
+        frozenAt: d.autoFinish?.startedAt ?? null,
+        autoFinisher: d.autoFinish?.player ?? null,
+        canUndo: !d.autoFinish && d.histories.get(id)!.length > 0,
         peek:
           peek && peek.until > now
             ? {
@@ -574,6 +655,7 @@ export class Game {
             x: v.x,
             y: v.y,
             protected: v.protectedUntil > now,
+            facing: v.facing,
           })),
         loot: m.loot.filter(visible).map((v) => ({ ...v })),
       },
